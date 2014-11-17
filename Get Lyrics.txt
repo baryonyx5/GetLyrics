@@ -1,0 +1,85 @@
+(*
+Get lyrics for selected tracks in iTunes
+Uses (and requires) songtext python package
+https://github.com/ysim/songtext
+
+v1.0 - First functional version
+v1.1 - Add desktop log file and dialog with result summmary counts
+v1.2 - Change path to assume ~/bin/getlyrics/songtext directory to ensure custom modules are used
+
+Issues/ToDos:
+ - In some cases, tracks with lyrics are not skipped I think.
+ - Add option to scan library for tracks without lyrics
+*)
+property myTitle : "Get Lyrics"
+on write_to_file(this_data, target_file, append_data)
+    try
+        set the target_file to the target_file as string
+        set the open_target_file to open for access file target_file with write permission
+        if append_data is false then set eof of the open_target_file to 0
+        write this_data to the open_target_file starting at eof
+        close access the open_target_file
+        return true
+    on error
+        try
+            close access file target_file
+        end try
+        return false
+    end try
+end write_to_file
+tell application "iTunes"
+    display dialog return & "Get Lyrics Started..." buttons {"OK"} default button 1 with icon 1 giving up after 3 with title myTitle
+    set log_file to ((path to desktop) as string) & "GetLyrics.log"
+    set s_cnt to 0
+    set e_cnt to 0
+    set k_cnt to 0
+    set sel to selection
+    if sel is not {} then
+        repeat with this_track in sel
+            set lyric_text to ""
+            set new_lyrics to ""
+            set orig_lyrics to ""
+            try
+                tell this_track to set {title, art, orig_lyrics} to {get name, get artist, get lyrics}
+            on error
+                display dialog return & "Unable to access the track info..." buttons {"Cancel"} default button 1 with icon 0 giving up after 15 with title myTitle
+                return
+            end try
+            if orig_lyrics ≠ "" then
+                set msg to "--- Skipping " & title & ". Lyrics present." & return
+                my write_to_file(msg, log_file, true)
+                log msg
+                set k_cnt to (k_cnt + 1)
+            else
+                try
+                    set shell_title to quoted form of title
+                    set shell_art to quoted form of art
+                    set params to " -a " & shell_art & " -t " & shell_title
+                    set lyric_text to do shell script "~/bin/getlyrics/songtext/songtext" & params
+                on error errMsg
+                    set msg to "*** Error for track: " & title & ": " & errMsg
+                    my write_to_file(msg, log_file, true)
+                    log msg
+                    set e_cnt to (e_cnt + 1)
+                end try
+                try
+                    tell this_track to set lyrics to lyric_text
+                    tell this_track to set new_lyrics to get lyrics
+                end try
+                if new_lyrics ≠ "" then
+                    set msg to "+++ Success for track: " & title & return
+                    my write_to_file(msg, log_file, true)
+                    log msg
+                    set s_cnt to (s_cnt + 1)
+
+                end if
+            end if
+        end repeat
+    else
+        display dialog "No tracks selected..." buttons {"Cancel"} default button 1 with icon 2 with title myTitle giving up after 15
+    end if
+    set msg to (("Lyrics found: " & s_cnt as string) & " Not found: " & e_cnt as string) & " Tracks skipped: " & k_cnt as string
+    display dialog return & msg buttons {"OK"} default button 1 with icon 1 giving up after 15 with title myTitle
+    log msg
+
+end tell
